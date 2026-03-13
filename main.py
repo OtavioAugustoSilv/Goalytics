@@ -271,85 +271,72 @@ else:
     st.warning("Selecione pelo menos uma métrica.")
 
 # =====================================================
-# 🔮 PREVISÃO DE CONFRONTO (MODELO POISSON)
+# 🔮 PREVISÃO DE CONFRONTO (MODELO POISSON) COM JANELA PONDERADA
 # =====================================================
 
-
+import numpy as np
+from scipy.stats import poisson
 
 st.divider()
 st.header("🔮 Previsão de Confronto (Modelo Poisson)")
 
 col1, col2 = st.columns(2)
-
 timeA = col1.selectbox("Time da Casa", times_disponiveis, key="prevA")
 timeB = col2.selectbox("Time Visitante", times_disponiveis, key="prevB")
+
+# =====================================================
+# PARÂMETRO DE JANELA
+# =====================================================
+janela = st.slider("Número de jogos para análise", min_value=3, max_value=15, value=5, step=1)
 
 # =====================================================
 # FUNÇÃO PARA PEGAR ÚLTIMOS JOGOS
 # =====================================================
 
-def ultimos_jogos_time(time_nome):
+def ultimos_jogos_time(time_nome, n_jogos):
+    df_t = df[(df["HomeTeam"] == time_nome) | (df["AwayTeam"] == time_nome)].copy()
+    df_t = df_t.sort_values("Date", ascending=False).head(n_jogos)
 
-    df_t = df[
-        (df["HomeTeam"] == time_nome) |
-        (df["AwayTeam"] == time_nome)
-    ].copy()
-
-    df_t = df_t.sort_values("Date", ascending=False).head(5)
-
-    df_t["Gols Marcados"] = df_t.apply(
-        lambda row: row["FTHG"] if row["HomeTeam"] == time_nome else row["FTAG"],
-        axis=1
-    )
-
-    df_t["Gols Sofridos"] = df_t.apply(
-        lambda row: row["FTAG"] if row["HomeTeam"] == time_nome else row["FTHG"],
-        axis=1
-    )
-
+    df_t["Gols Marcados"] = df_t.apply(lambda row: row["FTHG"] if row["HomeTeam"] == time_nome else row["FTAG"], axis=1)
+    df_t["Gols Sofridos"] = df_t.apply(lambda row: row["FTAG"] if row["HomeTeam"] == time_nome else row["FTHG"], axis=1)
     df_t["Resultado"] = df_t.apply(
-        lambda row:
-            "Vitória" if row["Gols Marcados"] > row["Gols Sofridos"]
-            else "Empate" if row["Gols Marcados"] == row["Gols Sofridos"]
-            else "Derrota",
-        axis=1
+        lambda row: "Vitória" if row["Gols Marcados"] > row["Gols Sofridos"]
+        else "Empate" if row["Gols Marcados"] == row["Gols Sofridos"]
+        else "Derrota", axis=1
     )
-
     return df_t
 
-
-dfA = ultimos_jogos_time(timeA)
-dfB = ultimos_jogos_time(timeB)
+dfA = ultimos_jogos_time(timeA, janela)
+dfB = ultimos_jogos_time(timeB, janela)
 
 # =====================================================
 # MOSTRAR ÚLTIMOS JOGOS
 # =====================================================
 
-st.subheader("📋 Últimas 5 partidas")
-
+st.subheader(f"📋 Últimos {janela} jogos")
 col1, col2 = st.columns(2)
-
 tabelaA = dfA[["Date","HomeTeam","AwayTeam","Gols Marcados","Gols Sofridos","Resultado"]].copy()
 tabelaB = dfB[["Date","HomeTeam","AwayTeam","Gols Marcados","Gols Sofridos","Resultado"]].copy()
-
 tabelaA["Date"] = tabelaA["Date"].dt.strftime("%d/%m/%Y")
 tabelaB["Date"] = tabelaB["Date"].dt.strftime("%d/%m/%Y")
-
 col1.markdown(f"### {timeA}")
 col1.dataframe(tabelaA, use_container_width=True)
-
 col2.markdown(f"### {timeB}")
 col2.dataframe(tabelaB, use_container_width=True)
 
 # =====================================================
-# MÉDIAS DE ATAQUE E DEFESA
+# MÉDIA PONDERADA DE GOLS
 # =====================================================
 
-media_gols_A = dfA["Gols Marcados"].mean()
-media_sofridos_A = dfA["Gols Sofridos"].mean()
+def media_ponderada(gols):
+    n = len(gols)
+    pesos = np.arange(n, 0, -1)  # maior peso para jogos mais recentes
+    return np.average(gols, weights=pesos)
 
-media_gols_B = dfB["Gols Marcados"].mean()
-media_sofridos_B = dfB["Gols Sofridos"].mean()
+media_gols_A = media_ponderada(dfA["Gols Marcados"])
+media_sofridos_A = media_ponderada(dfA["Gols Sofridos"])
+media_gols_B = media_ponderada(dfB["Gols Marcados"])
+media_sofridos_B = media_ponderada(dfB["Gols Sofridos"])
 
 # =====================================================
 # GOLS ESPERADOS
@@ -364,24 +351,12 @@ gols_esperados_B = (media_gols_B + media_sofridos_A) / 2
 
 max_gols = 5
 prob_matrix = []
-
 for i in range(max_gols + 1):
     for j in range(max_gols + 1):
-
         prob = poisson.pmf(i, gols_esperados_A) * poisson.pmf(j, gols_esperados_B)
+        prob_matrix.append({"Placar": f"{i} x {j}", "Probabilidade": prob*100, "Gols_A": i, "Gols_B": j})
 
-        prob_matrix.append({
-            "Placar": f"{i} x {j}",
-            "Probabilidade": prob * 100,
-            "Gols_A": i,
-            "Gols_B": j
-        })
-
-df_poisson = pd.DataFrame(prob_matrix)
-
-# ordenar
-df_poisson = df_poisson.sort_values("Probabilidade", ascending=False)
-
+df_poisson = pd.DataFrame(prob_matrix).sort_values("Probabilidade", ascending=False)
 top5 = df_poisson.head(5)
 
 # =====================================================
@@ -389,24 +364,16 @@ top5 = df_poisson.head(5)
 # =====================================================
 
 placar_top = top5.iloc[0]["Placar"]
-
 st.subheader("⚽ Placar Mais Provável")
-
-st.markdown(
-    f"""
-    ## 🏟️ {timeA} **{placar_top}** {timeB}
-    """
-)
+st.markdown(f"## 🏟️ {timeA} **{placar_top}** {timeB}")
 
 # =====================================================
 # TOP 5 PLACARES
 # =====================================================
 
 st.subheader("📊 Top 5 Placares Mais Prováveis")
-
 tabela_poisson = top5[["Placar","Probabilidade"]].copy()
 tabela_poisson["Probabilidade"] = tabela_poisson["Probabilidade"].round(2).astype(str) + "%"
-
 st.dataframe(tabela_poisson, use_container_width=True)
 
 # =====================================================
@@ -414,15 +381,11 @@ st.dataframe(tabela_poisson, use_container_width=True)
 # =====================================================
 
 prob_vitoria_A = df_poisson[df_poisson["Gols_A"] > df_poisson["Gols_B"]]["Probabilidade"].sum()
-
 prob_empate = df_poisson[df_poisson["Gols_A"] == df_poisson["Gols_B"]]["Probabilidade"].sum()
-
 prob_vitoria_B = df_poisson[df_poisson["Gols_A"] < df_poisson["Gols_B"]]["Probabilidade"].sum()
 
 st.subheader("📊 Probabilidade de Resultado")
-
 col1, col2, col3 = st.columns(3)
-
 col1.metric(f"🏠 Vitória {timeA}", f"{prob_vitoria_A:.1f}%")
 col2.metric("🤝 Empate", f"{prob_empate:.1f}%")
 col3.metric(f"✈️ Vitória {timeB}", f"{prob_vitoria_B:.1f}%")
@@ -432,14 +395,11 @@ col3.metric(f"✈️ Vitória {timeB}", f"{prob_vitoria_B:.1f}%")
 # =====================================================
 
 df_poisson["Total_Gols"] = df_poisson["Gols_A"] + df_poisson["Gols_B"]
-
 prob_over25 = df_poisson[df_poisson["Total_Gols"] >= 3]["Probabilidade"].sum()
 prob_under25 = df_poisson[df_poisson["Total_Gols"] <= 2]["Probabilidade"].sum()
 
 st.subheader("⚽ Over / Under 2.5 Gols")
-
 col1, col2 = st.columns(2)
-
 col1.metric("Over 2.5", f"{prob_over25:.1f}%")
 col2.metric("Under 2.5", f"{prob_under25:.1f}%")
 
@@ -447,16 +407,10 @@ col2.metric("Under 2.5", f"{prob_under25:.1f}%")
 # BTTS
 # =====================================================
 
-prob_btts = df_poisson[
-    (df_poisson["Gols_A"] >= 1) &
-    (df_poisson["Gols_B"] >= 1)
-]["Probabilidade"].sum()
-
+prob_btts = df_poisson[(df_poisson["Gols_A"] >= 1) & (df_poisson["Gols_B"] >= 1)]["Probabilidade"].sum()
 prob_nao_btts = 100 - prob_btts
 
 st.subheader("🥅 Ambos Marcam (BTTS)")
-
 col1, col2 = st.columns(2)
-
 col1.metric("Sim", f"{prob_btts:.1f}%")
 col2.metric("Não", f"{prob_nao_btts:.1f}%")
