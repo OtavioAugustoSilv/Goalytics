@@ -20,7 +20,7 @@ st.markdown(hide_pages, unsafe_allow_html=True)
 # =====================================================
 if "user" not in st.session_state:
     st.warning("Você precisa estar logado.")
-    st.switch_page("pages/login.py")
+    st.switch_page("login")
     st.stop()
 
 # =====================================================
