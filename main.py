@@ -6,6 +6,11 @@ from scipy.stats import poisson
 import sqlite3
 import streamlit as st
 
+
+st.write("Main iniciou")
+
+if st.button("Ir pro login"):
+    st.switch_page("pages/login.py")
 # =====================================================
 # 🔥 ESCONDER PÁGINAS
 # =====================================================
