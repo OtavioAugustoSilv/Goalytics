@@ -3,14 +3,52 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 from scipy.stats import poisson
+import sqlite3
 
-st.set_page_config(page_title="Dashboard Futebol Histórico", layout="wide")
+# =====================================================
+# 🔥 ESCONDER PÁGINAS
+# =====================================================
+hide_pages = """
+<style>
+    [data-testid="stSidebarNav"] {display: none;}
+</style>
+"""
+st.markdown(hide_pages, unsafe_allow_html=True)
+
+# =====================================================
+# 🔐 PROTEÇÃO DE LOGIN
+# =====================================================
+if "user" not in st.session_state:
+    st.warning("Você precisa estar logado.")
+    st.switch_page("pages/login.py")
+    st.stop()
+
+# =====================================================
+# 🔌 CONEXÃO
+# =====================================================
+def conectar():
+    return sqlite3.connect("futebol.db", check_same_thread=False)
+
+user = st.session_state.user
+
+# =====================================================
+# ⚙️ CONFIG
+# =====================================================
+st.set_page_config(page_title="Dashboard Futebol", layout="wide")
 st.title("⚽ Dashboard Histórico de Futebol")
 
 # =====================================================
-# ESCOLHER LIGA E TEMPORADA
+# 👤 SIDEBAR
 # =====================================================
+st.sidebar.write(f"👤 {user['nome']}")
 
+if st.sidebar.button("Sair"):
+    st.session_state.clear()
+    st.switch_page("pages/login.py")
+
+# =====================================================
+# 📊 LIGAS E TEMPORADAS
+# =====================================================
 ligas = {
     "Premier League (Inglaterra)": "E0",
     "La Liga (Espanha)": "SP1",
@@ -23,12 +61,73 @@ temporadas = {
     "2021-2022": "2122"
 }
 
-liga = st.selectbox("Selecione a Liga", ligas.keys())
+# =====================================================
+# ⭐ BUSCAR TIME FAVORITO (COM LIGA)
+# =====================================================
+conn = conectar()
+cursor = conn.cursor()
+
+cursor.execute(
+    "SELECT nome, liga FROM times WHERE id = ?",
+    (user["time_id"],)
+)
+
+resultado = cursor.fetchone()
+conn.close()
+
+time_padrao = None
+liga_padrao = None
+
+if resultado:
+    time_padrao = resultado[0]
+    liga_padrao = resultado[1]
+
+# =====================================================
+# 🔁 DEFINIR LIGA PADRÃO
+# =====================================================
+if liga_padrao:
+    liga_nome = next((k for k, v in ligas.items() if v == liga_padrao), list(ligas.keys())[0])
+else:
+    liga_nome = list(ligas.keys())[0]
+
+# =====================================================
+# ⭐ BOTÃO FAVORITO
+# =====================================================
+if st.button("⭐ Ir para meu time favorito"):
+    if time_padrao and liga_padrao:
+
+        # Descobrir nome da liga (texto)
+        liga_nome = next(
+            (k for k, v in ligas.items() if v == liga_padrao),
+            None
+        )
+
+        if liga_nome:
+            st.session_state["liga"] = liga_nome
+            st.session_state["time"] = time_padrao
+            st.rerun()
+# =====================================================
+# 🎯 SELECT LIGA
+# =====================================================
+if "liga" not in st.session_state:
+    st.session_state["liga"] = liga_nome
+
+liga = st.selectbox(
+    "Selecione a Liga",
+    list(ligas.keys()),
+    key="liga"
+)
+
 temporada = st.selectbox("Selecione a Temporada", temporadas.keys())
 
 codigo_liga = ligas[liga]
 codigo_temp = temporadas[temporada]
 
+
+
+# =====================================================
+# 📥 CARREGAR DADOS
+# =====================================================
 url = f"https://www.football-data.co.uk/mmz4281/{codigo_temp}/{codigo_liga}.csv"
 
 @st.cache_data
@@ -42,45 +141,49 @@ df = carregar_csv(url)
 st.success("✅ Dados carregados com sucesso!")
 
 # =====================================================
-# FILTRAR TIME
+# ⚽ TIMES DISPONÍVEIS
 # =====================================================
-
-# =====================================================
-# FILTRAR TIME (DROPDOWN)
-# =====================================================
-
 times_disponiveis = sorted(df["HomeTeam"].unique())
+
+# =====================================================
+# 🔥 DEFINIR TIME FINAL
+# =====================================================
+if "time" in st.session_state and st.session_state["time"] in times_disponiveis:
+    time_padrao_final = st.session_state["time"]
+elif time_padrao in times_disponiveis:
+    time_padrao_final = time_padrao
+else:
+    time_padrao_final = times_disponiveis[0]
+
+# =====================================================
+# 🎯 SELECT TIME
+# =====================================================
+if "time" not in st.session_state:
+    st.session_state["time"] = time_padrao_final
 
 time = st.selectbox(
     "Selecione o Time para Análise Individual",
-    times_disponiveis
+    times_disponiveis,
+    key="time"
 )
 
+# =====================================================
+# 📊 FILTRO
+# =====================================================
 df_time = df[
     (df["HomeTeam"] == time) |
     (df["AwayTeam"] == time)
 ].copy()
 
 if df_time.empty:
-    st.error("❌ Time não encontrado nessa liga/temporada.")
-    st.stop()
-
-df_time = df_time.sort_values("Date")
-df_time = df[
-    (df["HomeTeam"] == time) |
-    (df["AwayTeam"] == time)
-].copy()
-
-if df_time.empty:
-    st.error("❌ Time não encontrado nessa liga/temporada.")
+    st.error("❌ Time não encontrado nessa liga.")
     st.stop()
 
 df_time = df_time.sort_values("Date")
 
 # =====================================================
-# CÁLCULO DE MÉTRICAS
+# 📈 MÉTRICAS
 # =====================================================
-
 df_time["Gols Marcados"] = df_time.apply(
     lambda row: row["FTHG"] if row["HomeTeam"] == time else row["FTAG"], axis=1
 )
@@ -106,14 +209,14 @@ df_time["Pontos Acumulados"] = df_time["Pontos"].cumsum()
 total_jogos = len(df_time)
 total_gols = df_time["Gols Marcados"].sum()
 media_gols = round(total_gols / total_jogos, 2)
+
 percentual_vitorias = round(
     (len(df_time[df_time["Resultado"] == "Vitória 🟢"]) / total_jogos) * 100, 1
 )
 
 # =====================================================
-# KPIs
+# 📊 KPIs
 # =====================================================
-
 st.subheader(f"📊 Desempenho do {time} na temporada {temporada}")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -126,26 +229,20 @@ col4.metric("🏆 % de Vitórias", f"{percentual_vitorias}%")
 st.divider()
 
 # =====================================================
-# GRÁFICO
+# 📉 GRÁFICO
 # =====================================================
-
 fig = px.line(
     df_time,
     x="Date",
     y="Pontos Acumulados",
     markers=True,
-    title="🏆 Evolução dos Pontos na Temporada"
-)
-
-fig.update_layout(
-    xaxis_title="Data",
-    yaxis_title="Pontos Acumulados"
+    title="🏆 Evolução dos Pontos"
 )
 
 st.plotly_chart(fig, use_container_width=True)
 
 # =====================================================
-# TABELA FINAL ORGANIZADA
+# TABELA FINAL
 # =====================================================
 
 st.subheader("📋 Histórico de Jogos")
