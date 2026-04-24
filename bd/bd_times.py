@@ -1,6 +1,6 @@
 import sqlite3
 import pandas as pd
-conn = sqlite3.connect("futebol.db")
+conn = sqlite3.connect("../futebol.db")
 cursor = conn.cursor()
 
 # 1. Criar nova tabela temporária
@@ -29,7 +29,7 @@ conn.commit()
 
 # 🔹 Conexão
 def conectar():
-    return sqlite3.connect("futebol.db")
+    return sqlite3.connect("../futebol.db")
 
 # 🔹 Arquivos locais
 arquivos = {

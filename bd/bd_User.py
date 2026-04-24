@@ -1,4 +1,4 @@
-from db_connection import conectar
+from bd.db_connection import conectar
 import sqlite3
 
 # 🔹 Criar tabela (executa 1x quando rodar o arquivo)
