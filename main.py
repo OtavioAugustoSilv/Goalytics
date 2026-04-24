@@ -4,13 +4,7 @@ import plotly.express as px
 import numpy as np
 from scipy.stats import poisson
 import sqlite3
-import streamlit as st
 
-
-st.write("Main iniciou")
-
-if st.button("Ir pro login"):
-    st.switch_page("pages/login.py")
 # =====================================================
 # 🔥 ESCONDER PÁGINAS
 # =====================================================
@@ -26,7 +20,7 @@ st.markdown(hide_pages, unsafe_allow_html=True)
 # =====================================================
 if "user" not in st.session_state:
     st.warning("Você precisa estar logado.")
-    st.switch_page("login")
+    st.switch_page("pages/login.py")
     st.stop()
 
 # =====================================================
