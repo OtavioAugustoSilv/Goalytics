@@ -511,3 +511,169 @@ st.subheader("🥅 Ambos Marcam (BTTS)")
 col1, col2 = st.columns(2)
 col1.metric("Sim", f"{prob_btts:.1f}%")
 col2.metric("Não", f"{prob_nao_btts:.1f}%")
+
+st.markdown("## 🧠 Índice de Risco do Jogo (IRJ)")
+times = sorted(df["HomeTeam"].unique())
+
+time_home = st.selectbox("Time da Casa", times)
+time_away = st.selectbox("Time Visitante", times)
+
+# =========================
+# FUNÇÕES
+# =========================
+
+def ultimos_jogos_time(df, time):
+    return df[(df["HomeTeam"] == time) | (df["AwayTeam"] == time)].tail(5)
+
+def calcular_dados(jogos, time):
+    gols_marcados = []
+    gols_sofridos = []
+    pontos = []
+
+    for _, row in jogos.iterrows():
+        if row["HomeTeam"] == time:
+            gm = row["FTHG"]
+            gs = row["FTAG"]
+        else:
+            gm = row["FTAG"]
+            gs = row["FTHG"]
+
+        gols_marcados.append(gm)
+        gols_sofridos.append(gs)
+
+        if gm > gs:
+            pontos.append(3)
+        elif gm == gs:
+            pontos.append(1)
+        else:
+            pontos.append(0)
+
+    return gols_marcados, gols_sofridos, pontos
+
+def forca_historica(df, time):
+    jogos = df[(df["HomeTeam"] == time) | (df["AwayTeam"] == time)]
+
+    pontos = 0
+    total = 0
+
+    for _, row in jogos.iterrows():
+        if row["HomeTeam"] == time:
+            gm = row["FTHG"]
+            gs = row["FTAG"]
+        else:
+            gm = row["FTAG"]
+            gs = row["FTHG"]
+
+        if gm > gs:
+            pontos += 3
+        elif gm == gs:
+            pontos += 1
+
+        total += 3
+
+    return pontos / total if total > 0 else 0
+
+def calcular_forca(df, time):
+    jogos = ultimos_jogos_time(df, time)
+    gm, gs, pts = calcular_dados(jogos, time)
+
+    ataque = np.mean(gm) if gm else 0
+    defesa = np.mean(gs) if gs else 0
+    forma = np.mean(pts) / 3 if pts else 0
+    hist = forca_historica(df, time)
+
+    forca = (
+        (ataque * 0.4) +
+        ((1 / (defesa + 1)) * 0.2) +
+        (forma * 0.2) +
+        (hist * 0.2)
+    )
+
+    return forca, ataque, defesa, forma, hist, jogos
+
+# =========================
+# CALCULAR
+# =========================
+
+forca_home, atk_h, def_h, form_h, hist_h, jogos_h = calcular_forca(df, time_home)
+forca_away, atk_a, def_a, form_a, hist_a, jogos_a = calcular_forca(df, time_away)
+
+irj = abs(forca_home - forca_away)
+
+# =========================
+# RESULTADO
+# =========================
+
+st.write("### 📊 Dados utilizados")
+
+def formatar_tabela(jogos, time):
+    tabela = []
+
+    for _, row in jogos.iterrows():
+        if row["HomeTeam"] == time:
+            tabela.append({
+                "Adversário": row["AwayTeam"],
+                "Gols feitos": row["FTHG"],
+                "Gols sofridos": row["FTAG"]
+            })
+        else:
+            tabela.append({
+                "Adversário": row["HomeTeam"],
+                "Gols feitos": row["FTAG"],
+                "Gols sofridos": row["FTHG"]
+            })
+
+    return pd.DataFrame(tabela)
+
+st.write(f"### {time_home}")
+st.dataframe(formatar_tabela(jogos_h, time_home))
+
+st.write(f"### {time_away}")
+st.dataframe(formatar_tabela(jogos_a, time_away))
+
+# =========================
+# MÉTRICAS
+# =========================
+
+st.write("### 📈 Métricas")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write(f"**{time_home}**")
+    st.write(f"Ataque: {atk_h:.2f}")
+    st.write(f"Defesa: {def_h:.2f}")
+    st.write(f"Forma: {form_h:.2f}")
+    st.write(f"Força histórica: {hist_h:.2f}")
+    st.write(f"Força final: {forca_home:.2f}")
+
+with col2:
+    st.write(f"**{time_away}**")
+    st.write(f"Ataque: {atk_a:.2f}")
+    st.write(f"Defesa: {def_a:.2f}")
+    st.write(f"Forma: {form_a:.2f}")
+    st.write(f"Força histórica: {hist_a:.2f}")
+    st.write(f"Força final: {forca_away:.2f}")
+
+# =========================
+# IRJ
+# =========================
+
+st.markdown("## Índice de Risco do Jogo (IRJ)")
+
+irj_percent = irj * 100
+
+st.markdown(f"# {irj_percent:.0f}%")
+
+st.caption("Diferença de força entre as equipes (quanto maior, mais desequilibrado o confronto)")
+
+if irj < 0.15:
+    st.info("Jogo muito equilibrado")
+elif irj < 0.35:
+    vencedor = time_home if forca_home > forca_away else time_away
+    st.info(f"Leve vantagem para {vencedor}")
+else:
+    vencedor = time_home if forca_home > forca_away else time_away
+    st.success(f"Favorito claro: {vencedor}")
+
+st.progress(min(irj, 1.0))
