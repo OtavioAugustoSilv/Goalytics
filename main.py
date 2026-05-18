@@ -4,7 +4,6 @@ import plotly.express as px
 import numpy as np
 from scipy.stats import poisson
 import sqlite3
-from bd.db_connection import conectar
 
 # =====================================================
 # 🔥 ESCONDER PÁGINAS
@@ -24,11 +23,14 @@ if "user" not in st.session_state:
     st.switch_page("pages/login.py")
     st.stop()
 
+# =====================================================
+# 🔌 CONEXÃO
+# =====================================================
+def conectar():
+    return sqlite3.connect("futebol.db", check_same_thread=False)
 
-# =====================================================
-# ⚙️ CAPTURA USER
-# =====================================================
-user = st.session_state["user"]
+user = st.session_state.user
+
 # =====================================================
 # ⚙️ CONFIG
 # =====================================================
